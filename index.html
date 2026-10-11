@@ -113,6 +113,7 @@ body.dark header{background:rgba(15,23,42,.9)}
 .share-btn.wa{background:linear-gradient(135deg,#dcfce7,#bbf7d0);color:#166534}
 .share-btn.fb{background:linear-gradient(135deg,#dbeafe,#bfdbfe);color:#1e40af}
 .share-btn.edit{background:linear-gradient(135deg,#fef3c7,#fde68a);color:#78350f}
+.share-btn.cp{background:linear-gradient(135deg,#f3e8ff,#e9d5ff);color:#6b21a8}
 .share-btn.del{background:linear-gradient(135deg,#fee2e2,#fecaca);color:#991b1b}
 .fav-star{position:absolute;top:10px;left:10px;background:rgba(255,255,255,.95);color:var(--yellow);font-size:17px;padding:5px 9px;border-radius:999px;border:none;z-index:5;box-shadow:0 3px 10px rgba(0,0,0,.15);min-height:32px}
 .fav-star.off{color:#cbd5e1}
@@ -1114,6 +1115,8 @@ function renderArticles(){
     html += '<button class="share-btn" onclick="openArticle(\'' + esc(a.id) + '\')">Lire</button>';
     html += '<button class="share-btn wa" onclick="shareArticle(\'' + esc(a.id) + '\',\'wa\')">WhatsApp</button>';
     html += '<button class="share-btn fb" onclick="shareArticle(\'' + esc(a.id) + '\',\'fb\')">Facebook</button>';
+    html += '<button class="share-btn" onclick="shareNative(\'' + esc(a.id) + '\')">📤 Partager</button>';
+    html += '<button class="share-btn cp" onclick="copyLink(\'' + esc(a.id) + '\')">🔗 Copier</button>';
     if(isAdmin) html += '<button class="share-btn edit" onclick="openArticleEditor(\'' + esc(a.id) + '\')">Modifier</button>';
     if(isAdmin) html += '<button class="share-btn del" onclick="deleteArticle(\'' + esc(a.id) + '\')">Supprimer</button>';
     html += '</div></div></article>';
@@ -1161,7 +1164,8 @@ window.openArticle = function(id){
   html += '<div class="article-actions" style="margin-top:18px">';
   html += '<button class="share-btn wa" onclick="shareArticle(\'' + esc(a.id) + '\',\'wa\')">WhatsApp</button>';
   html += '<button class="share-btn fb" onclick="shareArticle(\'' + esc(a.id) + '\',\'fb\')">Facebook</button>';
-  html += '<button class="share-btn" onclick="shareNative(\'' + esc(a.id) + '\')">Partager</button>';
+  html += '<button class="share-btn" onclick="shareNative(\'' + esc(a.id) + '\')">📤 Partager</button>';
+  html += '<button class="share-btn cp" onclick="copyLink(\'' + esc(a.id) + '\')">🔗 Copier le lien</button>';
   if(isAdmin) html += '<button class="share-btn edit" onclick="openArticleEditor(\'' + esc(a.id) + '\')">Modifier</button>';
   html += '</div></div>';
   $("articleFull").innerHTML = html;
@@ -1180,8 +1184,38 @@ window.shareArticle = function(id, type){
 window.shareNative = async function(id){
   const a = ARTICLES.find(x => x.id === id); if(!a) return;
   const url = "https://abdarrahimhassan-hash.github.io/Rahim-Football-TCHAD/?" + (a.slug||id);
-  if(navigator.share){ try{ await navigator.share({title:a.title, text:a.excerpt, url}); }catch(e){} }
-  else { navigator.clipboard?.writeText(url); toast("Lien copié", "success"); }
+  const shareData = { title: a.title + " — Rahim Football Tchad", text: a.excerpt || a.title, url: url };
+  if(navigator.share){
+    try{
+      await navigator.share(shareData);
+    } catch(e){
+      if(e.name !== "AbortError") toast("Partage annulé", "warning");
+    }
+  } else {
+    copyLink(id);
+  }
+};
+
+window.copyLink = function(id){
+  const a = ARTICLES.find(x => x.id === id); if(!a) return;
+  const url = "https://abdarrahimhassan-hash.github.io/Rahim-Football-TCHAD/?" + (a.slug||id);
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(() => {
+      toast("Lien copié dans le presse-papiers ✅", "success");
+    }).catch(() => {
+      toast("Impossible de copier", "warning");
+    });
+  } else {
+    const textarea = document.createElement("textarea");
+    textarea.value = url;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    try { document.execCommand("copy"); toast("Lien copié ✅", "success"); }
+    catch(e) { toast("Copie impossible", "warning"); }
+    document.body.removeChild(textarea);
+  }
 };
 
 window.deleteArticle = async function(id){
@@ -1407,11 +1441,6 @@ window.deleteLegend = async function(id){
   catch(e){ toast("Erreur", "error"); }
 };
 
-/* ============================================================
-   MERGE OFFICIALS — FIX CRITIQUE
-   Les fallbacks (8) + Firestore sont fusionnés par ID.
-   Cela évite : la disparition des 8 personnalités et les doublons.
-   ============================================================ */
 function getMergedOfficials(){
   const merged = FALLBACK_OFFICIALS.map(f => {
     const override = OFFICIALS.find(o => o.id === f.id);
@@ -1491,8 +1520,6 @@ window.saveOfficial = async function(){
   if(!d.name || !d.role || !d.bio){ st.textContent = "Champs requis"; return; }
   st.textContent = "Enregistrement…";
   try{
-    // FIX CRITIQUE : l'ID reste stable (tahir, nair, hunwanou...)
-    // Évite les doublons et préserve le merge.
     const nid = id || ("off_" + Date.now().toString(36));
     await setDoc(doc(db,"officials",nid), d);
     toast("Enregistré", "success");
